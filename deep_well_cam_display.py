@@ -1,7 +1,8 @@
 import obspython as obs
 import serial
 from serial.tools import list_ports
-import datetime
+from datetime import datetime
+import threading
 
 debug = True
 parity_dict = {
@@ -18,19 +19,20 @@ parity = "None"
 stop_bits = 1
 port = None
 timeout = 1
-thread = None
+t = None
+depth_val = ""
+clock_val = ""
 
 class TextContent:
     def __init__(self, source_name=None, text_string="NaN"):
         self.source_name = source_name
         self.text_string = text_string
 
-    def update_text(self):
+    def update_text(self, text):
         source = obs.obs_get_source_by_name(self.source_name)
         settings = obs.obs_data_create()
-        # self.text_string = f"{counter_text}{self.counter}"
-
-        obs.obs_data_set_string(settings, "text", "shit")
+        self.text_string = text
+        obs.obs_data_set_string(settings, "text", self.text_string)
         obs.obs_source_update(source, settings)
         obs.obs_data_release(settings)
         obs.obs_source_release(source)
@@ -117,7 +119,7 @@ def script_properties():
             if source_id == "text_gdiplus" or source_id == "text_ft2_source":
                 name = obs.obs_source_get_name(source)
                 obs.obs_property_list_add_string(depth_text_source, name, name)
-                # obs.obs_property_list_add_string(clock_text_source, name, name)
+                obs.obs_property_list_add_string(clock_text_source, name, name)
 
         obs.source_list_release(sources)
     
@@ -133,11 +135,11 @@ def script_update(settings):
     byte_size = obs.obs_data_get_int(settings, "byte_size_source")
     parity = obs.obs_data_get_string(settings, "parity_source")
     stop_bits = obs.obs_data_get_int(settings, "stop_bits_source")
-    hotkeys_counter_1.source_name = obs.obs_data_get_string(settings, "depth_text_source")
+    depth_text.source_name = obs.obs_data_get_string(settings, "depth_text_source")
+    clock_text.source_name = obs.obs_data_get_string(settings, "clock_text_source")
 
 def start(props, prop):
-    global port
-    global thread
+    global port, t
     try:
         port = serial.Serial(
             port_name, 
@@ -147,33 +149,51 @@ def start(props, prop):
             stopbits=stop_bits,
             timeout=timeout
         )
-        obs.timer_add(update_depth_text, 1000)
+        t = threading.Thread(target=update_values)
+        t.start()
+        obs.timer_add(update_ui, 100)
         dprint(f"SUCCESS: Opened serial port {port_name}. Baud Rate = {baud_rate} Byte Size = {byte_size} Parity = {parity} Stop Bits = {stop_bits}")
     except serial.serialutil.SerialException:
         dprint(f"ERROR: Could not open serial port {port_name}.")
     
 def stop(props, prop):
-    global port
-    if not port:
+    global port, t
+    if not port or t:
         return
-    try:
+    try:     
         port.close()
         port = None
-        obs.timer_remove(update_depth_text)
+        t.join()
         dprint(f"SUCCESS: Closed serial port {port_name}.")
     except serial.serialutil.SerialException:
         dprint(f"ERROR: Could not close the serial port {port_name}.")
 
-def update_depth_text():
-    print(port.readline())
-    hotkeys_counter_1.update_text("shit", 0)
+def update_values():
+    global depth_val, clock_val
+    while True:
+        clock_val = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        depth_val = str(port.readline())[2:-5]
 
-def update_clock_text():
-    pass
+def update_ui():
+    depth_text.update_text(depth_val)
+    clock_text.update_text(clock_val)
 
 def script_description():
     return "Displays the date and time from the computer, and the depth values from the serial port."
 
+def script_unload():
+    obs.timer_remove(update_values)
+    global port, t
+    if not port or t:
+        return
+    try:
+        port.close()
+        t.join()
+        dprint(f"SUCCESS: Closed serial port {port_name}.")
+    except serial.serialutil.SerialException:
+        dprint(f"ERROR: Could not close the serial port {port_name}.")
+
 def dprint(*input):
     if debug == True:
         print(*input)
+    
