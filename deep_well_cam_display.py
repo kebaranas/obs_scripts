@@ -171,7 +171,7 @@ def stop(props, prop):
 def update_values():
     global depth_val, clock_val
     while True:
-        clock_val = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        clock_val = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         depth_val = str(port.readline())[2:-5]
 
 def update_ui():
