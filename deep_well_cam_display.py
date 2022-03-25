@@ -175,7 +175,8 @@ def update_values():
         depth_val = str(port.readline())[2:-5]
 
 def update_ui():
-    depth_text.update_text(depth_val)
+    if depth_val != "":
+        depth_text.update_text(depth_val)
     clock_text.update_text(clock_val)
 
 def script_description():
